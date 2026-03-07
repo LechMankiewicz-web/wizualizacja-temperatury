@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gaz i średnia energia kinetyczna — Celsjusz / Kelvin</title>
+  <style>
+    :root{
+      --bg:#ffffff; --panel:#f7f7f8; --border:#d9d9de; --text:#1f2937; --muted:#6b7280; --accent:#2563eb;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; padding:24px; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background:var(--bg); color:var(--text); display:flex; justify-content:center;
+    }
+    .app{width:min(1180px,100%); display:grid; gap:16px}
+    .card{
+      background:var(--panel); border:1px solid var(--border); border-radius:20px; padding:18px;
+      box-shadow:0 6px 20px rgba(0,0,0,.04);
+    }
+    h1{margin:0 0 8px; font-size:1.65rem}
+    p{margin:0; line-height:1.5; color:var(--muted)}
+    .controls{display:grid; gap:14px}
+    .row{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+    label{font-weight:600}
+    input[type="range"]{width:100%; accent-color:var(--accent)}
+    .legend{
+      display:flex; justify-content:space-between; font-size:.95rem; color:var(--muted); margin-top:-4px;
+    }
+    .btn{
+      appearance:none; border:1px solid var(--border); background:#fff; color:var(--text);
+      border-radius:14px; padding:10px 14px; font:600 15px system-ui; cursor:pointer;
+    }
+    .btn:hover{border-color:#bfc4ce}
+    .btn.primary{border-color:#93c5fd}
+    .btn.active{background:#eff6ff; border-color:#60a5fa}
+    canvas{
+      width:100%; height:auto; background:#fff; border:1px solid var(--border); border-radius:18px; display:block;
+    }
+    .notes{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}
+    .note{background:#fff; border:1px solid var(--border); border-radius:14px; padding:10px 12px}
+    .note .k{color:var(--muted); font-size:.92rem; margin-bottom:4px}
+    .note .v{font-size:1.08rem; font-weight:700; font-variant-numeric:tabular-nums}
+    .formula{
+      font-size:.96rem; color:var(--muted); margin-left:auto;
+      padding:8px 12px; border:1px solid var(--border); border-radius:12px; background:#fff;
+    }
+    @media (max-width:900px){ .notes{grid-template-columns:1fr} .formula{margin-left:0} }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="card">
+      <h1>Gaz i średnia energia kinetyczna</h1>
+      <p>
+        Możesz przełączać opis temperatury między skalą Celsjusza i Kelvina.
+        Sama fizyka się nie zmienia — zmienia się tylko sposób opisu temperatury.
+      </p>
+    </div>
+
+    <div class="card controls">
+      <div>
+        <label id="sliderLabel" for="tempSlider">Temperatura</label>
+        <input id="tempSlider" type="range" min="0" max="300" value="80" step="1">
+        <div class="legend">
+          <span id="leftLegend">0°C</span>
+          <span id="tempValue">80°C</span>
+          <span id="rightLegend">300°C</span>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn active" id="cBtn">Skala Celsjusza</button>
+        <button class="btn" id="kBtn">Skala Kelvina</button>
+        <button class="btn primary" id="snapshotBtn">Snapshot histogramu</button>
+        <button class="btn" id="resumeBtn">Wznów histogram</button>
+        <button class="btn" id="smoothBtn">Tryb płynny: włączony</button>
+        <div class="formula" id="formulaBox">T(K) = t(°C) + 273</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <canvas id="sim" width="1120" height="620" aria-label="Symulacja gazu i histogram energii kinetycznej"></canvas>
+      <div class="notes" style="margin-top:12px">
+        <div class="note">
+          <div class="k">Liczba cząsteczek</div>
+          <div class="v" id="countText">240</div>
+        </div>
+        <div class="note">
+          <div class="k">Średnia energia kinetyczna</div>
+          <div class="v" id="meanText">0.00 j.u.</div>
+        </div>
+        <div class="note">
+          <div class="k">Stan histogramu</div>
+          <div class="v" id="modeText">na żywo</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('sim');
+  const ctx = canvas.getContext('2d');
+  const tempSlider = document.getElementById('tempSlider');
+  const tempValue = document.getElementById('tempValue');
+  const countText = document.getElementById('countText');
+  const meanText = document.getElementById('meanText');
+  const modeText = document.getElementById('modeText');
+  const snapshotBtn = document.getElementById('snapshotBtn');
+  const resumeBtn = document.getElementById('resumeBtn');
+  const smoothBtn = document.getElementById('smoothBtn');
+  const cBtn = document.getElementById('cBtn');
+  const kBtn = document.getElementById('kBtn');
+  const leftLegend = document.getElementById('leftLegend');
+  const rightLegend = document.getElementById('rightLegend');
+  const sliderLabel = document.getElementById('sliderLabel');
+
+  const particleCount = 240;
+  countText.textContent = particleCount;
+
+  const gasBox = { x: 60, y: 90, w: 450, h: 430 };
+  const histBox = { x: 590, y: 90, w: 470, h: 430 };
+  const thermometer = { x: 530, y: 150, w: 18, h: 230 };
+  const bins = 20;
+  const particles = [];
+
+  const fixedMaxEnergy = 16;
+  let displayedMean = 0;
+  let histogramFrozen = false;
+  let smoothMode = true;
+  let scaleMode = 'C';
+
+  let frozenCounts = null;
+  let frozenMean = null;
+  let smoothedCounts = new Array(bins).fill(0);
+
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+  function map(value, inMin, inMax, outMin, outMax){
+    return outMin + (value - inMin) * (outMax - outMin) / (inMax - inMin);
+  }
+  function randn(){
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+
+  function cToK(c){ return c + 273; }
+
+  function formatTemp(tempC){
+    if (scaleMode === 'K') return cToK(tempC) + ' K';
+    return tempC + '°C';
+  }
+
+  function refreshScaleLabels(){
+    const c = Number(tempSlider.value);
+    tempValue.textContent = formatTemp(c);
+    if (scaleMode === 'K'){
+      sliderLabel.textContent = 'Temperatura (Kelvin)';
+      leftLegend.textContent = cToK(0) + ' K';
+      rightLegend.textContent = cToK(300) + ' K';
+      cBtn.classList.remove('active');
+      kBtn.classList.add('active');
+    } else {
+      sliderLabel.textContent = 'Temperatura';
+      leftLegend.textContent = '0°C';
+      rightLegend.textContent = '300°C';
+      cBtn.classList.add('active');
+      kBtn.classList.remove('active');
+    }
+  }
+
+  function temperatureToSigma(temp){
+    return map(temp, 0, 300, 1.0, 2.8);
+  }
+
+  function temperatureToColor(temp){
+    const t = clamp(temp / 300, 0, 1);
+    const hue = map(t, 0, 1, 215, 8);
+    return 'hsl(' + hue + ', 82%, 56%)';
+  }
+
+  function sampleVelocity(temp){
+    const sigma = temperatureToSigma(temp);
+    return { vx: randn() * sigma, vy: randn() * sigma };
+  }
+
+  function energyOf(p){
+    return 0.5 * (p.vx * p.vx + p.vy * p.vy);
+  }
+
+  function createParticles(){
+    particles.length = 0;
+    const temp = Number(tempSlider.value);
+    for(let i = 0; i < particleCount; i++){
+      const vel = sampleVelocity(temp);
+      particles.push({
+        x: gasBox.x + 12 + Math.random() * (gasBox.w - 24),
+        y: gasBox.y + 12 + Math.random() * (gasBox.h - 24),
+        vx: vel.vx,
+        vy: vel.vy,
+        r: 4
+      });
+    }
+    const energies = getEnergies();
+    displayedMean = mean(energies);
+    smoothedCounts = getHistogram(energies).slice();
+  }
+
+  function applyTemperatureChange(){
+    const temp = Number(tempSlider.value);
+    const sigma = temperatureToSigma(temp);
+    for(const p of particles){
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.hypot(randn() * sigma, randn() * sigma);
+      p.vx = Math.cos(angle) * speed;
+      p.vy = Math.sin(angle) * speed;
+    }
+    histogramFrozen = false;
+    modeText.textContent = smoothMode ? 'na żywo — płynny' : 'na żywo';
+    refreshScaleLabels();
+  }
+
+  function thermostatStep(){
+    const temp = Number(tempSlider.value);
+    const sigma = temperatureToSigma(temp);
+    const a = 0.985;
+    const noiseScale = Math.sqrt(1 - a * a) * sigma;
+
+    for(const p of particles){
+      p.vx = a * p.vx + noiseScale * randn();
+      p.vy = a * p.vy + noiseScale * randn();
+    }
+  }
+
+  function updateParticles(){
+    for(const p of particles){
+      p.x += p.vx * 1.6;
+      p.y += p.vy * 1.6;
+
+      if(p.x - p.r < gasBox.x){
+        p.x = gasBox.x + p.r;
+        p.vx *= -1;
+      }
+      if(p.x + p.r > gasBox.x + gasBox.w){
+        p.x = gasBox.x + gasBox.w - p.r;
+        p.vx *= -1;
+      }
+      if(p.y - p.r < gasBox.y){
+        p.y = gasBox.y + p.r;
+        p.vy *= -1;
+      }
+      if(p.y + p.r > gasBox.y + gasBox.h){
+        p.y = gasBox.y + gasBox.h - p.r;
+        p.vy *= -1;
+      }
+    }
+  }
+
+  function getEnergies(){ return particles.map(energyOf); }
+
+  function mean(values){
+    let s = 0;
+    for(const v of values) s += v;
+    return s / values.length;
+  }
+
+  function getHistogram(energies){
+    const arr = new Array(bins).fill(0);
+    for(const e of energies){
+      if (e >= fixedMaxEnergy) continue;
+      let idx = Math.floor(e / fixedMaxEnergy * bins);
+      idx = clamp(idx, 0, bins - 1);
+      arr[idx]++;
+    }
+    return arr;
+  }
+
+  function updateHistogramState(energies){
+    const liveCounts = getHistogram(energies);
+    const liveMean = mean(energies);
+
+    if (!histogramFrozen) {
+      if (smoothMode) {
+        const alpha = 0.10;
+        for (let i = 0; i < bins; i++) {
+          smoothedCounts[i] = (1 - alpha) * smoothedCounts[i] + alpha * liveCounts[i];
+        }
+        displayedMean = 0.92 * displayedMean + 0.08 * liveMean;
+      } else {
+        for (let i = 0; i < bins; i++) smoothedCounts[i] = liveCounts[i];
+        displayedMean = liveMean;
+      }
+    }
+  }
+
+  function drawGasBox(temp){
+    ctx.strokeStyle = '#1f2937';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(gasBox.x, gasBox.y, gasBox.w, gasBox.h);
+
+    ctx.fillStyle = '#374151';
+    ctx.font = '600 24px system-ui';
+    ctx.fillText('Gaz w zbiorniku', gasBox.x, gasBox.y - 20);
+
+    const color = temperatureToColor(temp);
+    for(const p of particles){
+      ctx.beginPath();
+      ctx.fillStyle = color;
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+  }
+
+  function drawThermometer(tempC){
+    ctx.fillStyle = '#111827';
+    ctx.font = '700 26px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(formatTemp(tempC), thermometer.x + thermometer.w / 2 + 14, thermometer.y - 28);
+
+    ctx.strokeStyle = '#374151';
+    ctx.lineWidth = 3;
+    if(typeof ctx.roundRect === 'function'){
+      ctx.beginPath();
+      ctx.roundRect(thermometer.x, thermometer.y, thermometer.w, thermometer.h, 10);
+      ctx.stroke();
+    } else {
+      ctx.strokeRect(thermometer.x, thermometer.y, thermometer.w, thermometer.h);
+    }
+
+    const fillLevel = clamp(tempC / 300, 0, 1);
+    const fillH = fillLevel * (thermometer.h - 8);
+    ctx.fillStyle = temperatureToColor(tempC);
+    ctx.fillRect(thermometer.x + 4, thermometer.y + thermometer.h - 4 - fillH, thermometer.w - 8, fillH);
+
+    ctx.beginPath();
+    ctx.arc(thermometer.x + thermometer.w / 2, thermometer.y + thermometer.h + 23, 17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#374151';
+    ctx.font = '600 17px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(scaleMode === 'K' ? 'K' : '°C', thermometer.x + thermometer.w / 2, thermometer.y + thermometer.h + 58);
+
+    ctx.textAlign = 'left';
+  }
+
+  function drawHistogram(counts, meanValue){
+    const maxCount = Math.max(...counts, 1);
+
+    ctx.strokeStyle = '#1f2937';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(histBox.x, histBox.y, histBox.w, histBox.h);
+
+    ctx.fillStyle = '#374151';
+    ctx.font = '600 24px system-ui';
+    ctx.fillText('Histogram energii kinetycznej', histBox.x, histBox.y - 20);
+
+    const left = histBox.x + 46;
+    const bottom = histBox.y + histBox.h - 42;
+    const top = histBox.y + 26;
+    const right = histBox.x + histBox.w - 18;
+    const plotW = right - left;
+    const plotH = bottom - top;
+    const bw = plotW / bins;
+
+    ctx.strokeStyle = '#9ca3af';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(left, top);
+    ctx.lineTo(left, bottom);
+    ctx.lineTo(right, bottom);
+    ctx.stroke();
+
+    for(let i = 0; i < 4; i++){
+      const y = bottom - i * plotH / 3;
+      ctx.strokeStyle = '#eceef2';
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = histogramFrozen ? '#fde68a' : '#dbeafe';
+    ctx.strokeStyle = histogramFrozen ? '#d97706' : '#2563eb';
+    ctx.lineWidth = 1;
+
+    for(let i = 0; i < bins; i++){
+      const h = counts[i] / maxCount * (plotH - 8);
+      const x = left + i * bw + 1.5;
+      const y = bottom - h;
+      ctx.fillRect(x, y, bw - 3, h);
+      ctx.strokeRect(x, y, bw - 3, h);
+    }
+
+    const meanX = left + (Math.min(meanValue, fixedMaxEnergy) / fixedMaxEnergy) * plotW;
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(meanX, top);
+    ctx.lineTo(meanX, bottom);
+    ctx.stroke();
+
+    ctx.fillStyle = '#dc2626';
+    ctx.font = '600 16px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('średnia', meanX, top - 6);
+
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '500 15px system-ui';
+    ctx.fillText('energia kinetyczna (j.u.)', (left + right) / 2, histBox.y + histBox.h - 10);
+
+    ctx.save();
+    ctx.translate(histBox.x + 16, (top + bottom) / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText('liczba cząstek', 0, 0);
+    ctx.restore();
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '500 14px system-ui';
+    ctx.fillText('0', left - 4, bottom + 18);
+    ctx.textAlign = 'center';
+    ctx.fillText((fixedMaxEnergy/2).toFixed(0), left + plotW / 2, bottom + 18);
+    ctx.textAlign = 'right';
+    ctx.fillText(fixedMaxEnergy.toFixed(0), right, bottom + 18);
+
+    if (histogramFrozen) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#92400e';
+      ctx.font = '700 16px system-ui';
+      ctx.fillText('SNAPSHOT', right - 8, top + 18);
+    }
+
+    meanText.textContent = meanValue.toFixed(2) + ' j.u.';
+    ctx.textAlign = 'left';
+  }
+
+  function render(){
+    const temp = Number(tempSlider.value);
+    refreshScaleLabels();
+
+    thermostatStep();
+    updateParticles();
+
+    const energies = getEnergies();
+    updateHistogramState(energies);
+
+    const countsToDraw = histogramFrozen ? frozenCounts : smoothedCounts;
+    const meanToDraw = histogramFrozen ? frozenMean : displayedMean;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    drawGasBox(temp);
+    drawThermometer(temp);
+    drawHistogram(countsToDraw, meanToDraw);
+
+    requestAnimationFrame(render);
+  }
+
+  snapshotBtn.addEventListener('click', function(){
+    const energies = getEnergies();
+    const counts = smoothMode ? smoothedCounts.slice() : getHistogram(energies);
+    const meanValue = smoothMode ? displayedMean : mean(energies);
+    frozenCounts = counts.slice();
+    frozenMean = meanValue;
+    histogramFrozen = true;
+    modeText.textContent = 'snapshot';
+  });
+
+  resumeBtn.addEventListener('click', function(){
+    histogramFrozen = false;
+    modeText.textContent = smoothMode ? 'na żywo — płynny' : 'na żywo';
+  });
+
+  smoothBtn.addEventListener('click', function(){
+    smoothMode = !smoothMode;
+    smoothBtn.textContent = 'Tryb płynny: ' + (smoothMode ? 'włączony' : 'wyłączony');
+    if (!histogramFrozen) modeText.textContent = smoothMode ? 'na żywo — płynny' : 'na żywo';
+  });
+
+  cBtn.addEventListener('click', function(){
+    scaleMode = 'C';
+    refreshScaleLabels();
+  });
+
+  kBtn.addEventListener('click', function(){
+    scaleMode = 'K';
+    refreshScaleLabels();
+  });
+
+  tempSlider.addEventListener('input', applyTemperatureChange);
+
+  createParticles();
+  modeText.textContent = 'na żywo — płynny';
+  refreshScaleLabels();
+  render();
+})();
+</script>
+</body>
+</html>
