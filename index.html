@@ -124,7 +124,8 @@
   const bins = 20;
   const particles = [];
 
-  const fixedMaxEnergy = 16;
+  const fixedMaxEnergy = 36;
+  const fixedMaxCount = particleCount;
   let displayedMean = 0;
   let histogramFrozen = false;
   let smoothMode = true;
@@ -268,7 +269,6 @@
   function getHistogram(energies){
     const arr = new Array(bins).fill(0);
     for(const e of energies){
-      if (e >= fixedMaxEnergy) continue;
       let idx = Math.floor(e / fixedMaxEnergy * bins);
       idx = clamp(idx, 0, bins - 1);
       arr[idx]++;
@@ -348,7 +348,7 @@
   }
 
   function drawHistogram(counts, meanValue){
-    const maxCount = Math.max(...counts, 1);
+    const maxCount = fixedMaxCount;
 
     ctx.strokeStyle = '#1f2937';
     ctx.lineWidth = 4;
@@ -416,7 +416,7 @@
     ctx.translate(histBox.x + 16, (top + bottom) / 2);
     ctx.rotate(-Math.PI / 2);
     ctx.textAlign = 'center';
-    ctx.fillText('liczba cząstek', 0, 0);
+    ctx.fillText('liczba cząstek w przedziale', 0, 0);
     ctx.restore();
 
     ctx.textAlign = 'left';
@@ -426,7 +426,14 @@
     ctx.textAlign = 'center';
     ctx.fillText((fixedMaxEnergy/2).toFixed(0), left + plotW / 2, bottom + 18);
     ctx.textAlign = 'right';
-    ctx.fillText(fixedMaxEnergy.toFixed(0), right, bottom + 18);
+    ctx.fillText('≥' + fixedMaxEnergy.toFixed(0), right, bottom + 18);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '500 13px system-ui';
+    ctx.fillText(String(fixedMaxCount), left - 8, top + 4);
+    ctx.fillText(String(Math.round(fixedMaxCount / 2)), left - 8, top + plotH / 2 + 4);
+    ctx.fillText('0', left - 8, bottom + 4);
 
     if (histogramFrozen) {
       ctx.textAlign = 'right';
