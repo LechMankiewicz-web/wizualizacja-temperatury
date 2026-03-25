@@ -82,10 +82,6 @@
       <canvas id="sim" width="1120" height="620" aria-label="Symulacja gazu i histogram energii kinetycznej"></canvas>
       <div class="notes" style="margin-top:12px">
         <div class="note">
-          <div class="k">Liczba cząsteczek</div>
-          <div class="v" id="countText">240</div>
-        </div>
-        <div class="note">
           <div class="k">Średnia energia kinetyczna</div>
           <div class="v" id="meanText">0.00 j.u.</div>
         </div>
@@ -103,7 +99,6 @@
   const ctx = canvas.getContext('2d');
   const tempSlider = document.getElementById('tempSlider');
   const tempValue = document.getElementById('tempValue');
-  const countText = document.getElementById('countText');
   const meanText = document.getElementById('meanText');
   const modeText = document.getElementById('modeText');
   const snapshotBtn = document.getElementById('snapshotBtn');
@@ -116,16 +111,16 @@
   const sliderLabel = document.getElementById('sliderLabel');
 
   const particleCount = 240;
-  countText.textContent = particleCount;
 
   const gasBox = { x: 60, y: 90, w: 450, h: 430 };
   const histBox = { x: 590, y: 90, w: 470, h: 430 };
   const thermometer = { x: 530, y: 150, w: 18, h: 230 };
-  const bins = 20;
+  const bins = 23;
   const particles = [];
 
-  const fixedMaxEnergy = 36;
-  const fixedMaxCount = particleCount;
+  const displayEnergyScale = 5.4;
+  const fixedMaxEnergy = 72;
+  const fixedMaxPercent = 60;
   let displayedMean = 0;
   let histogramFrozen = false;
   let smoothMode = true;
@@ -172,7 +167,9 @@
   }
 
   function temperatureToSigma(temp){
-    return map(temp, 0, 300, 1.0, 2.8);
+    const T0 = cToK(0);
+    const TK = cToK(temp);
+    return 1.3 * Math.sqrt(TK / T0);
   }
 
   function temperatureToColor(temp){
@@ -187,7 +184,7 @@
   }
 
   function energyOf(p){
-    return 0.5 * (p.vx * p.vx + p.vy * p.vy);
+    return displayEnergyScale * 0.5 * (p.vx * p.vx + p.vy * p.vy);
   }
 
   function createParticles(){
@@ -269,6 +266,7 @@
   function getHistogram(energies){
     const arr = new Array(bins).fill(0);
     for(const e of energies){
+      if (e >= fixedMaxEnergy) continue;
       let idx = Math.floor(e / fixedMaxEnergy * bins);
       idx = clamp(idx, 0, bins - 1);
       arr[idx]++;
@@ -348,8 +346,6 @@
   }
 
   function drawHistogram(counts, meanValue){
-    const maxCount = fixedMaxCount;
-
     ctx.strokeStyle = '#1f2937';
     ctx.lineWidth = 4;
     ctx.strokeRect(histBox.x, histBox.y, histBox.w, histBox.h);
@@ -358,7 +354,7 @@
     ctx.font = '600 24px system-ui';
     ctx.fillText('Histogram energii kinetycznej', histBox.x, histBox.y - 20);
 
-    const left = histBox.x + 46;
+    const left = histBox.x + 64;
     const bottom = histBox.y + histBox.h - 42;
     const top = histBox.y + 26;
     const right = histBox.x + histBox.w - 18;
@@ -374,13 +370,18 @@
     ctx.lineTo(right, bottom);
     ctx.stroke();
 
-    for(let i = 0; i < 4; i++){
-      const y = bottom - i * plotH / 3;
+    const yTicks = [0, 20, 40, 60];
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '500 14px system-ui';
+    for(const tick of yTicks){
+      const y = bottom - (tick / fixedMaxPercent) * plotH;
       ctx.strokeStyle = '#eceef2';
       ctx.beginPath();
       ctx.moveTo(left, y);
       ctx.lineTo(right, y);
       ctx.stroke();
+      ctx.textAlign = 'right';
+      ctx.fillText(tick + '%', left - 8, y + 5);
     }
 
     ctx.fillStyle = histogramFrozen ? '#fde68a' : '#dbeafe';
@@ -388,7 +389,8 @@
     ctx.lineWidth = 1;
 
     for(let i = 0; i < bins; i++){
-      const h = counts[i] / maxCount * (plotH - 8);
+      const percent = counts[i] / particleCount * 100;
+      const h = Math.min(percent / fixedMaxPercent, 1) * (plotH - 2);
       const x = left + i * bw + 1.5;
       const y = bottom - h;
       ctx.fillRect(x, y, bw - 3, h);
@@ -413,10 +415,12 @@
     ctx.fillText('energia kinetyczna (j.u.)', (left + right) / 2, histBox.y + histBox.h - 10);
 
     ctx.save();
-    ctx.translate(histBox.x + 16, (top + bottom) / 2);
+    ctx.translate(histBox.x + 20, (top + bottom) / 2);
     ctx.rotate(-Math.PI / 2);
     ctx.textAlign = 'center';
-    ctx.fillText('liczba cząstek w przedziale', 0, 0);
+    ctx.font = '500 15px system-ui';
+    ctx.fillText('Procent cząstek', -14, 0);
+    ctx.fillText('w danym przedziale energii', 14, 0);
     ctx.restore();
 
     ctx.textAlign = 'left';
@@ -426,14 +430,7 @@
     ctx.textAlign = 'center';
     ctx.fillText((fixedMaxEnergy/2).toFixed(0), left + plotW / 2, bottom + 18);
     ctx.textAlign = 'right';
-    ctx.fillText('≥' + fixedMaxEnergy.toFixed(0), right, bottom + 18);
-
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#6b7280';
-    ctx.font = '500 13px system-ui';
-    ctx.fillText(String(fixedMaxCount), left - 8, top + 4);
-    ctx.fillText(String(Math.round(fixedMaxCount / 2)), left - 8, top + plotH / 2 + 4);
-    ctx.fillText('0', left - 8, bottom + 4);
+    ctx.fillText(fixedMaxEnergy.toFixed(0), right, bottom + 18);
 
     if (histogramFrozen) {
       ctx.textAlign = 'right';
