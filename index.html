@@ -169,7 +169,9 @@
   function temperatureToSigma(temp){
     const T0 = cToK(0);
     const TK = cToK(temp);
-    return 1.3 * Math.sqrt(TK / T0);
+    const base = 1.3 * Math.sqrt(TK / T0);
+    const boost = 1 + 0.35 * Math.pow(temp / 300, 1.8);
+    return base * boost;
   }
 
   function temperatureToColor(temp){
