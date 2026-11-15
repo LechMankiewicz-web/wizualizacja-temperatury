@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gaz i średnia energia kinetyczna — Celsjusz / Kelvin</title>
+  <title>Gaz i rozkład energii kinetycznej — Celsjusz / Kelvin</title>
   <style>
     :root{
       --bg:#ffffff; --panel:#f7f7f8; --border:#d9d9de; --text:#1f2937; --muted:#6b7280; --accent:#2563eb;
@@ -39,6 +39,7 @@
     }
     .notes{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}
     .note{background:#fff; border:1px solid var(--border); border-radius:14px; padding:10px 12px}
+    .note[hidden]{display:none}
     .note .k{color:var(--muted); font-size:.92rem; margin-bottom:4px}
     .note .v{font-size:1.08rem; font-weight:700; font-variant-numeric:tabular-nums}
     .formula{
@@ -51,7 +52,7 @@
 <body>
   <div class="app">
     <div class="card">
-      <h1>Gaz i średnia energia kinetyczna</h1>
+      <h1>Gaz i rozkład energii kinetycznej</h1>
       <p>
         Możesz przełączać opis temperatury między skalą Celsjusza i Kelvina.
         Sama fizyka się nie zmienia — zmienia się tylko sposób opisu temperatury.
@@ -74,6 +75,7 @@
         <button class="btn primary" id="snapshotBtn">Snapshot histogramu</button>
         <button class="btn" id="resumeBtn">Wznów histogram</button>
         <button class="btn" id="smoothBtn">Tryb płynny: włączony</button>
+        <button class="btn" id="toggleMeanBtn" type="button" aria-pressed="false">Pokaż średnią</button>
         <div class="formula" id="formulaBox">T(K) = t(°C) + 273</div>
       </div>
     </div>
@@ -81,7 +83,7 @@
     <div class="card">
       <canvas id="sim" width="1120" height="620" aria-label="Symulacja gazu i histogram energii kinetycznej"></canvas>
       <div class="notes" style="margin-top:12px">
-        <div class="note">
+        <div class="note" id="meanNote" hidden>
           <div class="k">Średnia energia kinetyczna</div>
           <div class="v" id="meanText">0.00 j.u.</div>
         </div>
@@ -104,6 +106,8 @@
   const snapshotBtn = document.getElementById('snapshotBtn');
   const resumeBtn = document.getElementById('resumeBtn');
   const smoothBtn = document.getElementById('smoothBtn');
+  const toggleMeanBtn = document.getElementById('toggleMeanBtn');
+  const meanNote = document.getElementById('meanNote');
   const cBtn = document.getElementById('cBtn');
   const kBtn = document.getElementById('kBtn');
   const leftLegend = document.getElementById('leftLegend');
@@ -122,6 +126,7 @@
   const fixedMaxEnergy = 72;
   const fixedMaxPercent = 60;
   let displayedMean = 0;
+  let showMean = false; // odsłaniamy po wprowadzeniu średniej podczas lekcji
   let histogramFrozen = false;
   let smoothMode = true;
   let scaleMode = 'C';
@@ -399,18 +404,20 @@
       ctx.strokeRect(x, y, bw - 3, h);
     }
 
-    const meanX = left + (Math.min(meanValue, fixedMaxEnergy) / fixedMaxEnergy) * plotW;
-    ctx.strokeStyle = '#dc2626';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(meanX, top);
-    ctx.lineTo(meanX, bottom);
-    ctx.stroke();
+    if (showMean) {
+      const meanX = left + (Math.min(meanValue, fixedMaxEnergy) / fixedMaxEnergy) * plotW;
+      ctx.strokeStyle = '#dc2626';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(meanX, top);
+      ctx.lineTo(meanX, bottom);
+      ctx.stroke();
 
-    ctx.fillStyle = '#dc2626';
-    ctx.font = '600 16px system-ui';
-    ctx.textAlign = 'center';
-    ctx.fillText('średnia', meanX, top - 6);
+      ctx.fillStyle = '#dc2626';
+      ctx.font = '600 16px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('średnia', meanX, top - 6);
+    }
 
     ctx.fillStyle = '#6b7280';
     ctx.font = '500 15px system-ui';
@@ -468,6 +475,14 @@
 
     requestAnimationFrame(render);
   }
+
+  toggleMeanBtn.addEventListener('click', function(){
+    showMean = !showMean;
+    meanNote.hidden = !showMean;
+    toggleMeanBtn.textContent = showMean ? 'Ukryj średnią' : 'Pokaż średnią';
+    toggleMeanBtn.classList.toggle('active', showMean);
+    toggleMeanBtn.setAttribute('aria-pressed', String(showMean));
+  });
 
   snapshotBtn.addEventListener('click', function(){
     const energies = getEnergies();
